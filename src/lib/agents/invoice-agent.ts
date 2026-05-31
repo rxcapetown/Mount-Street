@@ -1,18 +1,20 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Agent, AgentContext } from "./types";
+import { currencySymbol } from "../services/stripe-service";
 import type { StripeService } from "../services/stripe-service";
 
 export interface InvoiceInput {
   client: string;
   clientEmail: string;
-  description: string; // free-text brief of services rendered
-  amountGBP: number;   // total in pounds (we store pence internally)
-  dueDate?: string;    // ISO date string e.g. "2026-06-30"
+  description: string;  // free-text brief of services rendered
+  amountTotal: number;  // in major currency unit (e.g. 1500 = $1,500 or £1,500)
+  currency: string;     // lowercase ISO code, e.g. "usd", "gbp"
+  dueDate?: string;     // ISO date string e.g. "2026-06-30"
 }
 
 export interface InvoiceLineItem {
   description: string;
-  amountPence: number;
+  amountPence: number; // smallest currency unit (pence / cents / halalas)
 }
 
 export interface InvoiceDraft {
@@ -36,11 +38,11 @@ export const invoiceAgent: Agent<InvoiceInput, InvoiceDraft> = {
       ? `Write in this voice: ${ctx.brandProfile.voice}`
       : "Write in a professional, clear, and concise tone.";
 
+    const sym = currencySymbol(input.currency);
+    const totalSmallest = Math.round(input.amountTotal * 100);
     const dueLine = input.dueDate
       ? `Due date: ${input.dueDate}`
       : "Due date: 30 days from invoice date";
-
-    const totalPence = Math.round(input.amountGBP * 100);
 
     const prompt = `You are an invoice formatting assistant for a solo professional.
 
@@ -50,22 +52,22 @@ Structure the following into a professional invoice. The total is fixed — do n
 
 Client: ${input.client}
 Services: ${input.description}
-Total: £${input.amountGBP.toFixed(2)}
+Total: ${sym}${input.amountTotal.toFixed(2)} ${input.currency.toUpperCase()}
 ${dueLine}
 
 Return ONLY valid JSON in this exact shape — no markdown, no extra text:
 {
   "lineItems": [
-    { "description": "...", "amountPence": <integer pence> }
+    { "description": "...", "amountSmallest": <integer in smallest currency unit> }
   ],
   "notes": "<one or two sentence payment note>"
 }
 
 Rules:
 - Split into separate line items only if the description clearly lists multiple distinct services.
-- All amountPence values must sum to exactly ${totalPence}.
+- All amountSmallest values must sum to exactly ${totalSmallest}.
 - Keep descriptions short (under 80 chars each).
-- notes should be a polite payment reminder (due date, bank transfer or card).`;
+- notes should be a polite payment reminder mentioning the due date.`;
 
     const message = await client.messages.create({
       model: "claude-sonnet-4-6",
@@ -81,44 +83,44 @@ Rules:
 
     try {
       const parsed = JSON.parse(raw) as {
-        lineItems?: Array<{ description: string; amountPence: number }>;
+        lineItems?: Array<{ description: string; amountSmallest: number }>;
         notes?: string;
       };
       lineItems = (parsed.lineItems ?? []).map((li) => ({
         description: li.description,
-        amountPence: li.amountPence,
+        amountPence: li.amountSmallest,
       }));
       notes = parsed.notes;
     } catch {
-      // Fallback: single line item for the whole amount
-      lineItems = [{ description: input.description, amountPence: totalPence }];
+      lineItems = [{ description: input.description, amountPence: totalSmallest }];
       notes = "Payment due within 30 days. Thank you for your business.";
     }
 
-    // Enforce the total is exactly right (guard against model drift)
+    // Enforce exact total (guard against model drift).
     const sum = lineItems.reduce((s, li) => s + li.amountPence, 0);
-    if (sum !== totalPence && lineItems.length > 0) {
-      lineItems[lineItems.length - 1].amountPence += totalPence - sum;
+    if (sum !== totalSmallest && lineItems.length > 0) {
+      lineItems[lineItems.length - 1].amountPence += totalSmallest - sum;
     }
 
     return {
       client: input.client,
       clientEmail: input.clientEmail,
       lineItems,
-      currency: "gbp",
+      currency: input.currency,
       dueDate: input.dueDate,
       notes,
     };
   },
 
   review(draft: InvoiceDraft) {
-    const totalPence = draft.lineItems.reduce((s, li) => s + li.amountPence, 0);
-    const totalGBP = (totalPence / 100).toFixed(2);
+    const totalSmallest = draft.lineItems.reduce((s, li) => s + li.amountPence, 0);
+    const sym = currencySymbol(draft.currency);
+    const total = (totalSmallest / 100).toFixed(2);
     return {
       title: "Send Invoice",
-      summary: `Send invoice to ${draft.client} — £${totalGBP}`,
+      summary: `Send invoice to ${draft.client} — ${sym}${total}`,
       body: draft.lineItems
-        .map((li) => `${li.description}: £${(li.amountPence / 100).toFixed(2)}`)
+        .map((li) => `${li.description}: ${sym}${(li.amountPence / 100).toFixed(2)}`)
         .join("\n"),
     };
   },
@@ -139,10 +141,11 @@ Rules:
       notes: draft.notes,
     });
 
-    const totalGBP = (result.amountTotal / 100).toFixed(2);
+    const sym = currencySymbol(draft.currency);
+    const total = (result.amountTotal / 100).toFixed(2);
     return {
       ok: true,
-      detail: `Invoice sent to ${draft.client} — £${totalGBP}`,
+      detail: `Invoice sent to ${draft.client} — ${sym}${total}`,
       externalRef: result.invoiceId,
     };
   },

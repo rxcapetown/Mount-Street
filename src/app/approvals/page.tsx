@@ -12,6 +12,7 @@ import {
 } from "@/app/actions/shared-actions";
 import type { PendingAction, ActionStatus } from "@/lib/actions/pending-action";
 import type { InvoiceLineItem } from "@/lib/agents/invoice-agent";
+import { currencySymbol } from "@/lib/services/stripe-service";
 
 const AGENT_LABELS: Record<string, string> = {
   "email-sender": "Send Email",
@@ -179,6 +180,7 @@ function DraftPreview({ agentId, draft }: { agentId: string; draft: Record<strin
   if (agentId === "invoice") {
     const lineItems = draft.lineItems as InvoiceLineItem[] | undefined;
     const total = lineItems?.reduce((s, li) => s + li.amountPence, 0) ?? 0;
+    const sym = currencySymbol(draft.currency != null ? String(draft.currency) : "gbp");
     return (
       <div className="rounded-md bg-muted px-4 py-3 space-y-2 text-xs font-mono">
         {draft.clientEmail != null && (
@@ -192,12 +194,12 @@ function DraftPreview({ agentId, draft }: { agentId: string; draft: Record<strin
             {lineItems.map((li, i) => (
               <div key={i} className="flex justify-between gap-4 text-foreground">
                 <span className="truncate">{li.description}</span>
-                <span className="shrink-0">£{(li.amountPence / 100).toFixed(2)}</span>
+                <span className="shrink-0">{sym}{(li.amountPence / 100).toFixed(2)}</span>
               </div>
             ))}
             <div className="flex justify-between gap-4 font-semibold border-t border-border pt-1 mt-1">
               <span>Total</span>
-              <span>£{(total / 100).toFixed(2)}</span>
+              <span>{sym}{(total / 100).toFixed(2)}</span>
             </div>
           </div>
         )}

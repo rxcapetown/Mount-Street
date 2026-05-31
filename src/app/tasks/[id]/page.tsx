@@ -22,6 +22,7 @@ import {
 import type { EmailDraft } from "@/lib/agents/email-agent";
 import type { ProposalDraft } from "@/lib/agents/proposal-agent";
 import type { InvoiceDraft } from "@/lib/agents/invoice-agent";
+import { CURRENCIES, currencySymbol } from "@/lib/services/stripe-service";
 
 export default function TaskPage({
   params,
@@ -100,7 +101,8 @@ function InvoiceFlow() {
   const [client, setClient] = useState("");
   const [clientEmail, setClientEmail] = useState("");
   const [description, setDescription] = useState("");
-  const [amountGBP, setAmountGBP] = useState("");
+  const [amount, setAmount] = useState("");
+  const [currency, setCurrency] = useState("usd");
   const [dueDate, setDueDate] = useState("");
   const [draft, setDraft] = useState<InvoiceDraft | null>(null);
   const [queuing, setQueuing] = useState(false);
@@ -115,7 +117,8 @@ function InvoiceFlow() {
         client,
         clientEmail,
         description,
-        amountGBP: parseFloat(amountGBP),
+        amountTotal: parseFloat(amount),
+        currency,
         dueDate: dueDate || undefined,
       });
       setDraft(result.draft);
@@ -146,7 +149,8 @@ function InvoiceFlow() {
         onGoToApprovals={() => router.push("/approvals")}
         onRunAgain={() => {
           setClient(""); setClientEmail(""); setDescription("");
-          setAmountGBP(""); setDueDate(""); setDraft(null); setStep("form");
+          setAmount(""); setCurrency("usd"); setDueDate("");
+          setDraft(null); setStep("form");
         }}
       />
     );
@@ -156,6 +160,7 @@ function InvoiceFlow() {
 
   if (step === "review" && draft) {
     const total = draft.lineItems.reduce((s, li) => s + li.amountPence, 0);
+    const sym = currencySymbol(draft.currency);
     return (
       <div className="px-8 py-10 max-w-lg">
         <button
@@ -177,6 +182,8 @@ function InvoiceFlow() {
             <span className="font-medium">{draft.client}</span>
             <span className="text-muted-foreground">Send to</span>
             <span className="font-medium">{draft.clientEmail}</span>
+            <span className="text-muted-foreground">Currency</span>
+            <span className="font-medium">{draft.currency.toUpperCase()}</span>
             {draft.dueDate && (
               <>
                 <span className="text-muted-foreground">Due</span>
@@ -191,12 +198,14 @@ function InvoiceFlow() {
             {draft.lineItems.map((li, i) => (
               <div key={i} className="flex justify-between gap-4">
                 <span className="text-muted-foreground">{li.description}</span>
-                <span className="font-medium shrink-0">£{(li.amountPence / 100).toFixed(2)}</span>
+                <span className="font-medium shrink-0">
+                  {sym}{(li.amountPence / 100).toFixed(2)}
+                </span>
               </div>
             ))}
             <div className="flex justify-between gap-4 font-semibold border-t border-border pt-2 mt-1">
               <span>Total</span>
-              <span>£{(total / 100).toFixed(2)}</span>
+              <span>{sym}{(total / 100).toFixed(2)}</span>
             </div>
           </div>
 
@@ -232,6 +241,7 @@ function InvoiceFlow() {
   }
 
   // form
+  const sym = currencySymbol(currency);
   return (
     <div className="px-8 py-10 max-w-lg">
       <button
@@ -280,18 +290,33 @@ function InvoiceFlow() {
             required
           />
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="amountGBP">Amount (£)</Label>
-          <Input
-            id="amountGBP"
-            type="number"
-            min="0.01"
-            step="0.01"
-            placeholder="0.00"
-            value={amountGBP}
-            onChange={(e) => setAmountGBP(e.target.value)}
-            required
-          />
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="currency">Currency</Label>
+            <select
+              id="currency"
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value)}
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              {CURRENCIES.map((c) => (
+                <option key={c.code} value={c.code}>{c.label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="amount">Amount ({sym.trim()})</Label>
+            <Input
+              id="amount"
+              type="number"
+              min="0.01"
+              step="0.01"
+              placeholder="0.00"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              required
+            />
+          </div>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="dueDate">

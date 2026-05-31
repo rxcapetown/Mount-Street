@@ -1,6 +1,7 @@
 import { InMemoryPendingActionStore } from "./actions/memory-store";
 import { FakeEmailSender } from "./services/email-sender";
-import { FakeStripeService } from "./services/stripe-service";
+import { RealStripeService, FakeStripeService } from "./services/stripe-service";
+import type { StripeService } from "./services/stripe-service";
 import { registerAgent } from "./agents/registry";
 import { emailAgent } from "./agents/email-agent";
 import { invoiceAgent } from "./agents/invoice-agent";
@@ -9,9 +10,20 @@ import { invoiceAgent } from "./agents/invoice-agent";
 // Replace InMemoryPendingActionStore with Supabase in Phase 2.
 export const store = new InMemoryPendingActionStore();
 export const fakeEmailSender = new FakeEmailSender();
-export const fakeStripeService = new FakeStripeService();
 
-// Register agents so the generic dispatcher (shared-actions) can look them up.
+function makeStripeService(): StripeService {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (key) {
+    console.log("[store-singleton] Stripe: using RealStripeService");
+    return new RealStripeService(key);
+  }
+  console.log("[store-singleton] Stripe: STRIPE_SECRET_KEY not set — using FakeStripeService");
+  return new FakeStripeService();
+}
+
+export const stripeService = makeStripeService();
+
+// Register agents so the generic dispatcher (shared-actions) can look them up by ID.
 registerAgent(emailAgent);
 registerAgent(invoiceAgent);
 
@@ -22,7 +34,7 @@ export function makeCtx() {
     userId: LOCAL_USER_ID,
     services: {
       emailSender: fakeEmailSender,
-      stripeService: fakeStripeService,
+      stripeService,
     },
   };
 }
