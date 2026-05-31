@@ -6,7 +6,7 @@ export interface MockTaskType {
   title: string;
   description: string;
   riskTier: RiskTier;
-  iconName: "Mail" | "Share2" | "FileText" | "MessageSquare";
+  iconName: "Mail" | "ClipboardList" | "FileText" | "MessageSquare";
 }
 
 export const MOCK_TASK_TYPES: MockTaskType[] = [
@@ -18,11 +18,11 @@ export const MOCK_TASK_TYPES: MockTaskType[] = [
     iconName: "Mail",
   },
   {
-    id: "social-post",
-    title: "Post to LinkedIn",
-    description: "Compose and publish a LinkedIn update on your behalf.",
-    riskTier: 1,
-    iconName: "Share2",
+    id: "proposal",
+    title: "Proposal / SOW",
+    description: "Turn a call or brief into a client-ready proposal or statement of work.",
+    riskTier: 0,
+    iconName: "ClipboardList",
   },
   {
     id: "invoice",
@@ -54,20 +54,6 @@ export const MOCK_PENDING_ACTIONS: PendingAction[] = [
     summary: "Send email to sarah@acme.com — Q3 performance summary",
     status: "pending",
     createdAt: "2026-05-30T08:45:00Z",
-  },
-  {
-    id: "pa-2",
-    userId: "u1",
-    agentId: "social-post",
-    riskTier: 1,
-    draft: {
-      platform: "LinkedIn",
-      message:
-        "Excited to share that we've just crossed 1,000 customers! 🎉 Thank you to everyone who believed in us from day one. Onward.",
-    },
-    summary: "Post LinkedIn update — milestone announcement",
-    status: "pending",
-    createdAt: "2026-05-30T09:10:00Z",
   },
   {
     id: "pa-3",
@@ -102,10 +88,10 @@ export const MOCK_AGENT_CONFIGS: AgentConfig[] = [
     caps: { maxAmount: 0 },
   },
   {
-    agentId: "social-post",
-    title: "Post to LinkedIn",
-    riskTier: 1,
-    autonomy: "ask_every_time",
+    agentId: "proposal",
+    title: "Proposal / SOW",
+    riskTier: 0,
+    autonomy: "draft_only",
     caps: { maxAmount: 0 },
   },
   {

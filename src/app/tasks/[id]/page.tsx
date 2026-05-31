@@ -2,7 +2,7 @@
 
 import { use, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CheckCircle2, Loader2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Loader2, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -14,7 +14,9 @@ import {
   generateEmailDraft,
   queueEmailAction,
 } from "@/app/actions/email-actions";
+import { generateProposalDraft } from "@/app/actions/proposal-actions";
 import type { EmailDraft } from "@/lib/agents/email-agent";
+import type { ProposalDraft } from "@/lib/agents/proposal-agent";
 
 export default function TaskPage({
   params,
@@ -23,7 +25,6 @@ export default function TaskPage({
 }) {
   const { id } = use(params);
   const taskType = MOCK_TASK_TYPES.find((t) => t.id === id);
-
   const router = useRouter();
 
   if (!taskType) {
@@ -42,14 +43,193 @@ export default function TaskPage({
     );
   }
 
-  if (id === "email-sender") {
-    return <EmailSenderFlow />;
-  }
-
+  if (id === "email-sender") return <EmailSenderFlow />;
+  if (id === "proposal") return <ProposalFlow />;
   return <GenericTaskFlow id={id} />;
 }
 
-// ─── Real email flow ───────────────────────────────────────────────────────────
+// ─── Generating spinner (shared) ──────────────────────────────────────────────
+
+function GeneratingScreen({ label }: { label: string }) {
+  return (
+    <div className="px-8 py-10 max-w-lg flex flex-col items-center gap-4 pt-24">
+      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      <p className="text-sm text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
+// ─── Real proposal flow (Tier 0 — generate only) ─────────────────────────────
+
+type ProposalStep = "form" | "generating" | "review";
+
+function ProposalFlow() {
+  const router = useRouter();
+  const [step, setStep] = useState<ProposalStep>("form");
+  const [client, setClient] = useState("");
+  const [projectName, setProjectName] = useState("");
+  const [scope, setScope] = useState("");
+  const [roughPrice, setRoughPrice] = useState("");
+  const [draft, setDraft] = useState<ProposalDraft | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleGenerate(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setStep("generating");
+    try {
+      const result = await generateProposalDraft({
+        client,
+        projectName,
+        scope,
+        roughPrice: roughPrice || undefined,
+      });
+      setDraft(result.draft);
+      setStep("review");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to generate proposal");
+      setStep("form");
+    }
+  }
+
+  async function handleCopy() {
+    if (!draft) return;
+    await navigator.clipboard.writeText(draft.content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  function handleStartOver() {
+    setClient("");
+    setProjectName("");
+    setScope("");
+    setRoughPrice("");
+    setDraft(null);
+    setCopied(false);
+    setStep("form");
+  }
+
+  if (step === "generating") {
+    return <GeneratingScreen label="Drafting your proposal…" />;
+  }
+
+  if (step === "review" && draft) {
+    return (
+      <div className="px-8 py-10 max-w-2xl">
+        <button
+          onClick={() => setStep("form")}
+          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-6 transition-colors"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Edit brief
+        </button>
+
+        <div className="flex items-center justify-between mb-1">
+          <h1 className="text-xl font-semibold">
+            {draft.projectName} — {draft.client}
+          </h1>
+          <Badge variant="muted">Generate only</Badge>
+        </div>
+        <p className="text-sm text-muted-foreground mb-6">
+          Edit the proposal below, then copy it to use anywhere.
+        </p>
+
+        <Textarea
+          rows={28}
+          value={draft.content}
+          onChange={(e) => setDraft({ ...draft, content: e.target.value })}
+          className="font-mono text-sm leading-relaxed"
+        />
+
+        <div className="mt-4 flex gap-2">
+          <Button onClick={handleCopy} className="flex-1">
+            {copied ? (
+              <><Check className="h-4 w-4" /> Copied!</>
+            ) : (
+              <><Copy className="h-4 w-4" /> Copy to clipboard</>
+            )}
+          </Button>
+          <Button variant="outline" onClick={handleStartOver}>
+            Start over
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // form step
+  return (
+    <div className="px-8 py-10 max-w-lg">
+      <button
+        onClick={() => router.push("/")}
+        className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-6 transition-colors"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" />
+        All tasks
+      </button>
+
+      <h1 className="text-xl font-semibold">Proposal / SOW</h1>
+      <p className="mt-1 text-sm text-muted-foreground mb-6">
+        Give a brief and the AI will draft a client-ready proposal for you to review and copy.
+      </p>
+
+      <form className="space-y-5" onSubmit={handleGenerate}>
+        <div className="space-y-1.5">
+          <Label htmlFor="client">Client name</Label>
+          <Input
+            id="client"
+            placeholder="Acme Corp"
+            value={client}
+            onChange={(e) => setClient(e.target.value)}
+            required
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="projectName">Project name</Label>
+          <Input
+            id="projectName"
+            placeholder="Brand strategy refresh"
+            value={projectName}
+            onChange={(e) => setProjectName(e.target.value)}
+            required
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="scope">Scope / what you&apos;ll deliver</Label>
+          <Textarea
+            id="scope"
+            placeholder="e.g. Audit current brand, run 3 stakeholder workshops, deliver new positioning framework and messaging guide"
+            rows={4}
+            value={scope}
+            onChange={(e) => setScope(e.target.value)}
+            required
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="roughPrice">
+            Investment{" "}
+            <span className="text-muted-foreground font-normal">(optional)</span>
+          </Label>
+          <Input
+            id="roughPrice"
+            placeholder="e.g. £8,500 or £3,000/month for 3 months"
+            value={roughPrice}
+            onChange={(e) => setRoughPrice(e.target.value)}
+          />
+        </div>
+
+        {error && <p className="text-sm text-destructive">{error}</p>}
+
+        <Button type="submit" className="w-full mt-2">
+          Generate proposal
+        </Button>
+      </form>
+    </div>
+  );
+}
+
+// ─── Real email flow (Tier 1) ──────────────────────────────────────────────────
 
 type EmailStep = "form" | "generating" | "review" | "done";
 
@@ -97,26 +277,18 @@ function EmailSenderFlow() {
 
   if (step === "done") {
     return (
-      <DoneScreen
+      <ApprovalDoneScreen
         onGoToApprovals={() => router.push("/approvals")}
         onRunAgain={() => {
-          setTo("");
-          setRecipientName("");
-          setIntent("");
-          setDraft(null);
-          setStep("form");
+          setTo(""); setRecipientName(""); setIntent("");
+          setDraft(null); setStep("form");
         }}
       />
     );
   }
 
   if (step === "generating") {
-    return (
-      <div className="px-8 py-10 max-w-lg flex flex-col items-center gap-4 pt-24">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">Drafting your email…</p>
-      </div>
-    );
+    return <GeneratingScreen label="Drafting your email…" />;
   }
 
   if (step === "review" && draft) {
@@ -161,14 +333,10 @@ function EmailSenderFlow() {
 
         <div className="mt-4 flex items-center justify-between">
           <Badge variant="warning">Tier 1 — Needs approval</Badge>
-          <span className="text-xs text-muted-foreground">
-            Goes to Approvals inbox
-          </span>
+          <span className="text-xs text-muted-foreground">Goes to Approvals inbox</span>
         </div>
 
-        {error && (
-          <p className="mt-3 text-sm text-destructive">{error}</p>
-        )}
+        {error && <p className="mt-3 text-sm text-destructive">{error}</p>}
 
         <div className="mt-6 flex flex-col gap-2">
           <Button className="w-full" onClick={handleQueue} disabled={queuing}>
@@ -178,11 +346,7 @@ function EmailSenderFlow() {
               "Queue for approval"
             )}
           </Button>
-          <Button
-            variant="outline"
-            className="w-full"
-            onClick={() => setStep("form")}
-          >
+          <Button variant="outline" className="w-full" onClick={() => setStep("form")}>
             Back to brief
           </Button>
         </div>
@@ -190,7 +354,6 @@ function EmailSenderFlow() {
     );
   }
 
-  // form step
   return (
     <div className="px-8 py-10 max-w-lg">
       <button
@@ -252,9 +415,9 @@ function EmailSenderFlow() {
   );
 }
 
-// ─── Shared done screen ────────────────────────────────────────────────────────
+// ─── Approval done screen (email / Tier 1) ────────────────────────────────────
 
-function DoneScreen({
+function ApprovalDoneScreen({
   onGoToApprovals,
   onRunAgain,
 }: {
@@ -286,30 +449,27 @@ function DoneScreen({
   );
 }
 
-// ─── Mock flow for all other tasks ────────────────────────────────────────────
+// ─── Mock flow for remaining tasks (invoice, reply-thread) ────────────────────
 
 type MockStep = "form" | "review" | "done";
 
-interface SocialDraft { kind: "social-post"; platform: string; message: string }
 interface InvoiceDraft { kind: "invoice"; client: string; amount: string; description: string }
 interface ReplyDraft { kind: "reply-thread"; threadUrl: string; reply: string }
-type MockDraft = SocialDraft | InvoiceDraft | ReplyDraft;
+type MockDraft = InvoiceDraft | ReplyDraft;
 
 function buildMockInitial(id: string): MockDraft {
-  if (id === "social-post") return { kind: "social-post", platform: "LinkedIn", message: "" };
   if (id === "invoice") return { kind: "invoice", client: "", amount: "", description: "" };
   return { kind: "reply-thread", threadUrl: "", reply: "" };
 }
 
 function mockSummary(d: MockDraft): string {
-  if (d.kind === "social-post") return `Post to ${d.platform}`;
   if (d.kind === "invoice") return `Send invoice to ${d.client || "—"} — £${d.amount || "0"}`;
   return "Reply to thread";
 }
 
 function mockBody(d: MockDraft): string {
-  if (d.kind === "social-post") return d.message;
-  if (d.kind === "invoice") return `Client: ${d.client}\nAmount: £${d.amount}\nDescription: ${d.description}`;
+  if (d.kind === "invoice")
+    return `Client: ${d.client}\nAmount: £${d.amount}\nDescription: ${d.description}`;
   return d.reply;
 }
 
@@ -321,7 +481,7 @@ function GenericTaskFlow({ id }: { id: string }) {
 
   if (step === "done") {
     return (
-      <DoneScreen
+      <ApprovalDoneScreen
         onGoToApprovals={() => router.push("/approvals")}
         onRunAgain={() => { setDraft(buildMockInitial(id)); setStep("form"); }}
       />
@@ -405,36 +565,6 @@ function GenericTaskFlow({ id }: { id: string }) {
 }
 
 function MockFormFields({ draft, onChange }: { draft: MockDraft; onChange: (d: MockDraft) => void }) {
-  if (draft.kind === "social-post") {
-    return (
-      <>
-        <div className="space-y-1.5">
-          <Label htmlFor="platform">Platform</Label>
-          <select
-            id="platform"
-            value={draft.platform}
-            onChange={(e) => onChange({ ...draft, platform: e.target.value })}
-            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          >
-            <option>LinkedIn</option>
-            <option>X / Twitter</option>
-          </select>
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="message">Message</Label>
-          <Textarea
-            id="message"
-            placeholder="What do you want to share?"
-            rows={5}
-            value={draft.message}
-            onChange={(e) => onChange({ ...draft, message: e.target.value })}
-            required
-          />
-        </div>
-      </>
-    );
-  }
-
   if (draft.kind === "invoice") {
     return (
       <>

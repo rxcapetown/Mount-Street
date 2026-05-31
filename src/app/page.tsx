@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Mail, Share2, FileText, MessageSquare } from "lucide-react";
+import { Mail, ClipboardList, FileText, MessageSquare } from "lucide-react";
 import {
   Card,
   CardHeader,
@@ -15,7 +15,7 @@ import { MOCK_TASK_TYPES, type MockTaskType } from "@/lib/mock-data";
 
 const iconMap = {
   Mail,
-  Share2,
+  ClipboardList,
   FileText,
   MessageSquare,
 } as const;

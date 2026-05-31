@@ -14,7 +14,7 @@ import type { PendingAction, ActionStatus } from "@/lib/actions/pending-action";
 
 const AGENT_LABELS: Record<string, string> = {
   "email-sender": "Send Email",
-  "social-post": "Post to LinkedIn",
+  proposal: "Proposal / SOW",
   invoice: "Send Invoice",
   "reply-thread": "Reply to Thread",
 };
