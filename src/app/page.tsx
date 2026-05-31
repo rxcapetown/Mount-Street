@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import { Mail, Share2, FileText, MessageSquare } from "lucide-react";
 import {

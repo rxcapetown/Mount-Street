@@ -1,11 +1,15 @@
 "use client";
 
-import { useState } from "react";
-import { CheckCircle2, XCircle, Clock } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import { CheckCircle2, XCircle, Clock, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { MOCK_PENDING_ACTIONS } from "@/lib/mock-data";
+import {
+  listAllPendingActions,
+  approveEmailAction,
+  rejectEmailAction,
+} from "@/app/actions/email-actions";
 import type { PendingAction, ActionStatus } from "@/lib/actions/pending-action";
 
 const AGENT_LABELS: Record<string, string> = {
@@ -42,14 +46,6 @@ function statusBadge(status: ActionStatus) {
   return <Badge variant="destructive">Failed</Badge>;
 }
 
-function formatDraft(draft: unknown): string {
-  if (!draft || typeof draft !== "object") return "";
-  const d = draft as Record<string, unknown>;
-  return Object.entries(d)
-    .map(([k, v]) => `${k}: ${v}`)
-    .join("\n");
-}
-
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString([], {
     hour: "2-digit",
@@ -58,16 +54,43 @@ function formatTime(iso: string) {
 }
 
 export default function ApprovalsPage() {
-  const [actions, setActions] = useState<PendingAction[]>(MOCK_PENDING_ACTIONS);
+  const [actions, setActions] = useState<PendingAction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [deciding, setDeciding] = useState<string | null>(null);
 
-  function decide(id: string, status: "approved" | "rejected") {
-    setActions((prev) =>
-      prev.map((a) =>
-        a.id === id
-          ? { ...a, status, decidedAt: new Date().toISOString() }
-          : a
-      )
+  const refresh = useCallback(async () => {
+    const data = await listAllPendingActions();
+    // newest first
+    data.sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
+    setActions(data);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  async function handleApprove(action: PendingAction) {
+    setDeciding(action.id);
+    try {
+      await approveEmailAction(action.id);
+    } finally {
+      setDeciding(null);
+      await refresh();
+    }
+  }
+
+  async function handleReject(action: PendingAction) {
+    setDeciding(action.id);
+    try {
+      await rejectEmailAction(action.id);
+    } finally {
+      setDeciding(null);
+      await refresh();
+    }
   }
 
   const pending = actions.filter((a) => a.status === "pending");
@@ -82,37 +105,47 @@ export default function ApprovalsPage() {
         </p>
       </div>
 
-      {pending.length === 0 && (
-        <div className="rounded-xl border border-border bg-muted/30 px-6 py-10 text-center text-sm text-muted-foreground">
-          No pending actions — you&apos;re all caught up.
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground py-10">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading…
         </div>
-      )}
-
-      <div className="space-y-4">
-        {pending.map((action) => (
-          <ActionCard
-            key={action.id}
-            action={action}
-            onApprove={() => decide(action.id, "approved")}
-            onReject={() => decide(action.id, "rejected")}
-          />
-        ))}
-      </div>
-
-      {decided.length > 0 && (
+      ) : (
         <>
-          <div className="mt-10 mb-4 flex items-center gap-3">
-            <Separator className="flex-1" />
-            <span className="text-xs text-muted-foreground uppercase tracking-wide">
-              Decided
-            </span>
-            <Separator className="flex-1" />
-          </div>
-          <div className="space-y-4 opacity-70">
-            {decided.map((action) => (
-              <ActionCard key={action.id} action={action} decided />
+          {pending.length === 0 && (
+            <div className="rounded-xl border border-border bg-muted/30 px-6 py-10 text-center text-sm text-muted-foreground">
+              No pending actions — you&apos;re all caught up.
+            </div>
+          )}
+
+          <div className="space-y-4">
+            {pending.map((action) => (
+              <ActionCard
+                key={action.id}
+                action={action}
+                deciding={deciding === action.id}
+                onApprove={() => handleApprove(action)}
+                onReject={() => handleReject(action)}
+              />
             ))}
           </div>
+
+          {decided.length > 0 && (
+            <>
+              <div className="mt-10 mb-4 flex items-center gap-3">
+                <Separator className="flex-1" />
+                <span className="text-xs text-muted-foreground uppercase tracking-wide">
+                  Decided
+                </span>
+                <Separator className="flex-1" />
+              </div>
+              <div className="space-y-4 opacity-70">
+                {decided.map((action) => (
+                  <ActionCard key={action.id} action={action} decided />
+                ))}
+              </div>
+            </>
+          )}
         </>
       )}
     </div>
@@ -124,13 +157,16 @@ function ActionCard({
   onApprove,
   onReject,
   decided = false,
+  deciding = false,
 }: {
   action: PendingAction;
   onApprove?: () => void;
   onReject?: () => void;
   decided?: boolean;
+  deciding?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const draft = action.draft as Record<string, unknown> | null;
 
   return (
     <div className="rounded-xl border border-border bg-card p-5 space-y-3">
@@ -158,22 +194,55 @@ function ActionCard({
         {expanded ? "Hide draft ↑" : "Show draft ↓"}
       </button>
 
-      {expanded && (
-        <pre className="rounded-md bg-muted px-4 py-3 text-xs whitespace-pre-wrap font-mono text-foreground">
-          {formatDraft(action.draft)}
-        </pre>
+      {expanded && draft && (
+        <div className="rounded-md bg-muted px-4 py-3 space-y-2">
+          {draft.to != null && (
+            <p className="text-xs font-mono text-muted-foreground">
+              <span className="font-semibold text-foreground">To:</span>{" "}
+              {String(draft.to)}
+            </p>
+          )}
+          {draft.subject != null && (
+            <p className="text-xs font-mono text-muted-foreground">
+              <span className="font-semibold text-foreground">Subject:</span>{" "}
+              {String(draft.subject)}
+            </p>
+          )}
+          {draft.body != null && (
+            <pre className="text-xs whitespace-pre-wrap font-mono text-foreground mt-2 border-t border-border pt-2">
+              {String(draft.body)}
+            </pre>
+          )}
+        </div>
+      )}
+
+      {action.status === "executed" && action.result && (
+        <p className="text-xs text-emerald-600 font-medium">✓ {action.result}</p>
+      )}
+      {action.status === "failed" && action.result && (
+        <p className="text-xs text-destructive">{action.result}</p>
       )}
 
       {!decided && (
         <div className="flex gap-2 pt-1">
-          <Button size="sm" onClick={onApprove} className="flex-1">
-            <CheckCircle2 className="h-3.5 w-3.5" />
+          <Button
+            size="sm"
+            onClick={onApprove}
+            disabled={deciding}
+            className="flex-1"
+          >
+            {deciding ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <CheckCircle2 className="h-3.5 w-3.5" />
+            )}
             Approve
           </Button>
           <Button
             size="sm"
             variant="outline"
             onClick={onReject}
+            disabled={deciding}
             className="flex-1"
           >
             <XCircle className="h-3.5 w-3.5" />
