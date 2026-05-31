@@ -7,10 +7,11 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {
   listAllPendingActions,
-  approveEmailAction,
-  rejectEmailAction,
-} from "@/app/actions/email-actions";
+  approveAnyAction,
+  rejectAnyAction,
+} from "@/app/actions/shared-actions";
 import type { PendingAction, ActionStatus } from "@/lib/actions/pending-action";
+import type { InvoiceLineItem } from "@/lib/agents/invoice-agent";
 
 const AGENT_LABELS: Record<string, string> = {
   "email-sender": "Send Email",
@@ -41,8 +42,7 @@ function statusBadge(status: ActionStatus) {
         Rejected
       </Badge>
     );
-  if (status === "executed")
-    return <Badge variant="success">Executed</Badge>;
+  if (status === "executed") return <Badge variant="success">Executed</Badge>;
   return <Badge variant="destructive">Failed</Badge>;
 }
 
@@ -60,7 +60,6 @@ export default function ApprovalsPage() {
 
   const refresh = useCallback(async () => {
     const data = await listAllPendingActions();
-    // newest first
     data.sort(
       (a, b) =>
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
@@ -76,7 +75,7 @@ export default function ApprovalsPage() {
   async function handleApprove(action: PendingAction) {
     setDeciding(action.id);
     try {
-      await approveEmailAction(action.id);
+      await approveAnyAction(action.id);
     } finally {
       setDeciding(null);
       await refresh();
@@ -86,7 +85,7 @@ export default function ApprovalsPage() {
   async function handleReject(action: PendingAction) {
     setDeciding(action.id);
     try {
-      await rejectEmailAction(action.id);
+      await rejectAnyAction(action.id);
     } finally {
       setDeciding(null);
       await refresh();
@@ -152,6 +151,77 @@ export default function ApprovalsPage() {
   );
 }
 
+function DraftPreview({ agentId, draft }: { agentId: string; draft: Record<string, unknown> }) {
+  if (agentId === "email-sender") {
+    return (
+      <div className="rounded-md bg-muted px-4 py-3 space-y-2">
+        {draft.to != null && (
+          <p className="text-xs font-mono text-muted-foreground">
+            <span className="font-semibold text-foreground">To:</span>{" "}
+            {String(draft.to)}
+          </p>
+        )}
+        {draft.subject != null && (
+          <p className="text-xs font-mono text-muted-foreground">
+            <span className="font-semibold text-foreground">Subject:</span>{" "}
+            {String(draft.subject)}
+          </p>
+        )}
+        {draft.body != null && (
+          <pre className="text-xs whitespace-pre-wrap font-mono text-foreground mt-2 border-t border-border pt-2">
+            {String(draft.body)}
+          </pre>
+        )}
+      </div>
+    );
+  }
+
+  if (agentId === "invoice") {
+    const lineItems = draft.lineItems as InvoiceLineItem[] | undefined;
+    const total = lineItems?.reduce((s, li) => s + li.amountPence, 0) ?? 0;
+    return (
+      <div className="rounded-md bg-muted px-4 py-3 space-y-2 text-xs font-mono">
+        {draft.clientEmail != null && (
+          <p className="text-muted-foreground">
+            <span className="font-semibold text-foreground">To:</span>{" "}
+            {String(draft.clientEmail)}
+          </p>
+        )}
+        {lineItems && lineItems.length > 0 && (
+          <div className="border-t border-border pt-2 space-y-1">
+            {lineItems.map((li, i) => (
+              <div key={i} className="flex justify-between gap-4 text-foreground">
+                <span className="truncate">{li.description}</span>
+                <span className="shrink-0">£{(li.amountPence / 100).toFixed(2)}</span>
+              </div>
+            ))}
+            <div className="flex justify-between gap-4 font-semibold border-t border-border pt-1 mt-1">
+              <span>Total</span>
+              <span>£{(total / 100).toFixed(2)}</span>
+            </div>
+          </div>
+        )}
+        {draft.dueDate != null && (
+          <p className="text-muted-foreground pt-1">
+            <span className="font-semibold text-foreground">Due:</span>{" "}
+            {String(draft.dueDate)}
+          </p>
+        )}
+        {draft.notes != null && (
+          <p className="text-muted-foreground italic">{String(draft.notes)}</p>
+        )}
+      </div>
+    );
+  }
+
+  // Fallback: generic key-value dump
+  return (
+    <pre className="rounded-md bg-muted px-4 py-3 text-xs whitespace-pre-wrap font-mono text-foreground">
+      {JSON.stringify(draft, null, 2)}
+    </pre>
+  );
+}
+
 function ActionCard({
   action,
   onApprove,
@@ -195,25 +265,7 @@ function ActionCard({
       </button>
 
       {expanded && draft && (
-        <div className="rounded-md bg-muted px-4 py-3 space-y-2">
-          {draft.to != null && (
-            <p className="text-xs font-mono text-muted-foreground">
-              <span className="font-semibold text-foreground">To:</span>{" "}
-              {String(draft.to)}
-            </p>
-          )}
-          {draft.subject != null && (
-            <p className="text-xs font-mono text-muted-foreground">
-              <span className="font-semibold text-foreground">Subject:</span>{" "}
-              {String(draft.subject)}
-            </p>
-          )}
-          {draft.body != null && (
-            <pre className="text-xs whitespace-pre-wrap font-mono text-foreground mt-2 border-t border-border pt-2">
-              {String(draft.body)}
-            </pre>
-          )}
-        </div>
+        <DraftPreview agentId={action.agentId} draft={draft} />
       )}
 
       {action.status === "executed" && action.result && (

@@ -28,7 +28,7 @@ export const MOCK_TASK_TYPES: MockTaskType[] = [
     id: "invoice",
     title: "Send Invoice",
     description: "Generate and send a payment invoice directly to a client.",
-    riskTier: 2,
+    riskTier: 1,
     iconName: "FileText",
   },
   {
@@ -40,36 +40,7 @@ export const MOCK_TASK_TYPES: MockTaskType[] = [
   },
 ];
 
-export const MOCK_PENDING_ACTIONS: PendingAction[] = [
-  {
-    id: "pa-1",
-    userId: "u1",
-    agentId: "email-sender",
-    riskTier: 1,
-    draft: {
-      to: "sarah@acme.com",
-      subject: "Q3 performance summary",
-      body: "Hi Sarah,\n\nPlease find attached the Q3 performance summary for your records. Revenue is up 14% vs last quarter.\n\nLet me know if you have any questions.\n\nBest,\nAlex",
-    },
-    summary: "Send email to sarah@acme.com — Q3 performance summary",
-    status: "pending",
-    createdAt: "2026-05-30T08:45:00Z",
-  },
-  {
-    id: "pa-3",
-    userId: "u1",
-    agentId: "invoice",
-    riskTier: 2,
-    draft: {
-      client: "Pinnacle Corp",
-      amount: 4500,
-      description: "Strategy consulting — May 2026 retainer",
-    },
-    summary: "Send invoice to Pinnacle Corp — £4,500",
-    status: "pending",
-    createdAt: "2026-05-30T10:00:00Z",
-  },
-];
+export const MOCK_PENDING_ACTIONS: PendingAction[] = [];
 
 export interface AgentConfig {
   agentId: string;
@@ -97,9 +68,9 @@ export const MOCK_AGENT_CONFIGS: AgentConfig[] = [
   {
     agentId: "invoice",
     title: "Send Invoice",
-    riskTier: 2,
-    autonomy: "draft_only",
-    caps: { maxAmount: 500 },
+    riskTier: 1,
+    autonomy: "ask_every_time",
+    caps: { maxAmount: 0 },
   },
   {
     agentId: "reply-thread",
