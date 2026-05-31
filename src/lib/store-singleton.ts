@@ -13,11 +13,8 @@ export const fakeEmailSender = new FakeEmailSender();
 
 function makeStripeService(): StripeService {
   const key = process.env.STRIPE_SECRET_KEY;
-  if (key) {
-    console.log("[store-singleton] Stripe: using RealStripeService");
-    return new RealStripeService(key);
-  }
-  console.log("[store-singleton] Stripe: STRIPE_SECRET_KEY not set — using FakeStripeService");
+  console.log(`[store-singleton] STRIPE_SECRET_KEY detected: ${!!key}`);
+  if (key) return new RealStripeService(key);
   return new FakeStripeService();
 }
 
